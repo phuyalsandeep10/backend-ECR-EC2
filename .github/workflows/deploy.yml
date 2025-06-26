@@ -1,4 +1,4 @@
-name: Build and Deploy to ECS
+name: Build, publish, and deploy Frontend Docker image (ECR) to EC2
 
 on:
   push:
@@ -6,47 +6,60 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v2
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
         with:
-          node-version: "20"
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
 
       - name: Login to Amazon ECR
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: us-east-1
-        run: |
-          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 879602785537.dkr.ecr.us-east-1.amazonaws.com
-
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build Docker image
         run: |
           docker build -t backend-repo .
-
+      
       - name: Tag Docker image
         run: |
           docker tag backend-repo:latest 879602785537.dkr.ecr.us-east-1.amazonaws.com/backend-repo:latest
-
+      
       - name: Push Docker image to Amazon ECR
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: us-east-1
         run: |
           docker push 879602785537.dkr.ecr.us-east-1.amazonaws.com/backend-repo:latest
 
-      - name: Deploy Docker image to ECS
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: us-east-1
-        run: |
-          aws ecs update-service --cluster api-cluster --service api-task-service-46g9d4tp --force-new-deployment
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build  # This ensures the deploy job runs after the build job
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        
+      - name: Deploy code to EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_PORT}}
+          script: |
+            # Log in to AWS ECR on the EC2 instance
+            aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 879602785537.dkr.ecr.us-east-1.amazonaws.com
+
+            # Pull the latest image
+            sudo docker pull 879602785537.dkr.ecr.us-east-1.amazonaws.com
+            
+            # Stop and remove the old container if it exists
+            sudo docker stop backend || true
+            sudo docker rm backend || true
+            
+            # Run the new container
+            sudo docker run -d --name frontend -p 5001:5001 879602785537.dkr.ecr.us-east-1.amazonaws.com
