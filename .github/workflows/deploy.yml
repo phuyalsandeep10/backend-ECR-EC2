@@ -44,19 +44,19 @@ jobs:
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
+          username: ${{ secrets.EC2_USERNAME }}  # usually 'ubuntu'
           key: ${{ secrets.EC2_SSH_KEY }}
           port: ${{ secrets.EC2_PORT }}
           script: |
             # Authenticate Docker to ECR
-            aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 879602785537.dkr.ecr.us-east-1.amazonaws.com
+            aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin 879602785537.dkr.ecr.us-east-1.amazonaws.com
 
-            # Pull the latest Docker image from ECR
-            docker pull 879602785537.dkr.ecr.us-east-1.amazonaws.com/backend-repo:latest
+            # Pull latest image
+            sudo docker pull 879602785537.dkr.ecr.us-east-1.amazonaws.com/backend-repo:latest
 
-            # Stop and remove old container if it exists
-            docker stop backend || true
-            docker rm backend || true
+            # Stop and remove existing container if exists
+            sudo docker stop backend || true
+            sudo docker rm backend || true
 
-            # Run new container
-            docker run -d --name backend -p 5001:5001 879602785537.dkr.ecr.us-east-1.amazonaws.com/backend-repo:latest
+            # Run updated container
+            sudo docker run -d --name backend -p 5001:5001 879602785537.dkr.ecr.us-east-1.amazonaws.com/backend-repo:latest
